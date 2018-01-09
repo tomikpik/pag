@@ -75,16 +75,6 @@ void writeOutput(const int myRank, const int width, const int height, const stri
     file.close();
 }
 
-bool isSpot(int pixelx, int pixely, Spot *spots, int spotSize, int bw, int bh) {//counts with global positions
-    // pixel -= bw;//remove the upper line
-
-    for (int i = 0; i < spotSize; ++i) {
-        if (spots[i].y == pixely && spots[i].x == pixelx) {
-            return true;
-        }
-    }
-    return false;
-}
 
 #define EPSILON 0.00001
 
@@ -93,10 +83,7 @@ int filterOnInner(float *block, float *newBlock, int bw, int bh, Spot *spots, in
     int different = 0; //1 if blocks are still not convergent, 0 if we done
     for (int y = 2; y < bh - 2; ++y) {
         for (int x = 0; x < bw; ++x) {
-            if (newBlock[y * bw + x] >= 0) {//if(isSpot(x,(y-1)+(bh-2)*rank,spots,spotSize,bw,bh)) {//(bh-2)
-                //newBlock[y*bw+x] = block[y*bw+x];
-                continue;
-            }
+            if (newBlock[y * bw + x] >= 0) continue;
             int divide = 9;
             float sum = 0;
             //do 3 common to all
@@ -105,52 +92,39 @@ int filterOnInner(float *block, float *newBlock, int bw, int bh, Spot *spots, in
             sum += block[(y + 1) * bw + x];
             if (x == 0) {//if start of line
                 divide = 6;
-
             } else {
-                //do 3 on the left
-                sum += block[y * bw + x - 1];
-                sum += block[(y - 1) * bw + x - 1];
-                sum += block[(y + 1) * bw + x - 1];
+                sum += block[y * bw + x - 1] + block[(y - 1) * bw + x - 1] + block[(y + 1) * bw + x - 1];
             }
-            if (x == bw - 1) divide = 6;
-            else {
-                sum += block[y * bw + x + 1];
-                sum += block[(y - 1) * bw + x + 1];
-                sum += block[(y + 1) * bw + x + 1];
+            if (x == bw - 1) {
+                divide = 6;
+            } else {
+                sum += block[y * bw + x + 1] + block[(y - 1) * bw + x + 1] + block[(y + 1) * bw + x + 1];
             }
             sum /= (float) divide;
-
             if (sum > 255) sum = 255;
             newBlock[y * bw + x] = sum;
             if (fabs(sum - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
         }
-
     }
     return different;
 }
 
-int filterOnReceived(float *block, float *newBlock, int bw, int bh, int rank, int worldsize, Spot *spots, int spotSize) {
+int filterOnReceived(float *block, float *newBlock, int bw, int bh, int rank, int worldsize) {
     int num = 0, y = 1, different = 0;
     float sum = 0;
     for (int x = 0; x < bw; ++x) {
-        if (newBlock[y * bw + x] >= 0) {//if(isSpot(x,(y-1)+(bh-2)*rank,spots,spotSize,bw,bh)){
-            //newBlock[y*bw+x] = block[y*bw+x];
-            continue;
-        }
+        if (newBlock[y * bw + x] >= 0) continue;
         num = 0;
         sum = 0;
-
         for (int y1 = -1; y1 < 2; ++y1) {
             if (rank == 0 && (y1 == -1)) continue;
             for (int x1 = -1; x1 < 2; ++x1) {
                 if ((x == 0 && x1 == -1) || (x == bw - 1 && x1 == 1)) continue;
                 num++;
                 sum += block[(y + y1) * bw + x + x1];
-
             }
         }
         sum /= (float) num;
-
         if (sum > 255) sum = 255;
         newBlock[y * bw + x] = sum;
         if (fabs(sum - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
@@ -158,20 +132,15 @@ int filterOnReceived(float *block, float *newBlock, int bw, int bh, int rank, in
 
     y = bh - 2;
     for (int x = 0; x < bw; ++x) {
-        if (newBlock[y * bw + x] >= 0) {//if(isSpot(x,(y-1)+(bh-2)*rank,spots,spotSize,bw,bh)) {
-            //newBlock[y*bw+x] = block[y*bw+x];
-            continue;
-        }
+        if (newBlock[y * bw + x] >= 0) continue;
         num = 0;
         sum = 0;
-
         for (int y1 = -1; y1 < 2; ++y1) {
             if (rank == worldsize - 1 && (y1 == 1)) continue;
             for (int x1 = -1; x1 < 2; ++x1) {
                 if ((x == 0 && x1 == -1) || (x == bw - 1 && x1 == 1)) continue;
                 num++;
                 sum += block[(y + y1) * bw + x + x1];
-
             }
         }
         sum /= (float) num;
@@ -179,9 +148,7 @@ int filterOnReceived(float *block, float *newBlock, int bw, int bh, int rank, in
         newBlock[y * bw + x] = sum;
         if (fabs(sum - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
     }
-
     return different;
-
 }
 
 void burstSpotsIntoBlock(int rank, float *block, Spot *spots, int spotSize, int bw, int bh) {//get there the original block size
@@ -195,55 +162,33 @@ void burstSpotsIntoBlock(int rank, float *block, Spot *spots, int spotSize, int 
 
 float *convoluteImage(int rank, int worldSize, float *block, int bw, int bh, Spot *spots, int spotsSize) {
     MPI_Request reqSendUpper, reqRecvUpper, reqSendLower, reqRecvLower;
-    int numIter = 0;
     float *newBlock = (float *) malloc(bw * (bh + 2) * sizeof(float));
 
     while (1) {
-        for (int i = 0; i < bw * (bh + 2); ++i) {
-            newBlock[i] = -1;
-        }
+        for (int i = 0; i < bw * (bh + 2); ++i) newBlock[i] = -1;
         if (rank != 0) {
             MPI_Isend(block + bw, bw, MPI_FLOAT, rank - 1, 1, MPI_COMM_WORLD, &reqSendUpper);
             MPI_Irecv(block, bw, MPI_FLOAT, rank - 1, 1, MPI_COMM_WORLD, &reqRecvUpper);
-
         }
         if (rank < worldSize - 1) {
             MPI_Isend(block + bw * bh, bw, MPI_FLOAT, rank + 1, 1, MPI_COMM_WORLD, &reqSendLower);
             MPI_Irecv(block + bw * bh + bw, bw, MPI_FLOAT, rank + 1, 1, MPI_COMM_WORLD, &reqRecvLower);
         }
-        //printf("After waiting %d \n",rank);
-        int endOfConvolution = 0; //0 done, 1 not yet done
-
+        int endOfConvolution = 0;
         burstSpotsIntoBlock(rank, newBlock, spots, spotsSize, bw, bh);
         endOfConvolution |= filterOnInner(block, newBlock, bw, bh + 2, spots, spotsSize, rank);
-        //printf("After inner filter and about to wait for new data\n");
         MPI_Status s;
-        if (rank < worldSize - 1) {
-            MPI_Wait(&reqRecvLower, NULL);
-        }
-        if (rank != 0) {
-            MPI_Wait(&reqRecvUpper, NULL);
-        }
-
-        endOfConvolution |= filterOnReceived(block, newBlock, bw, bh + 2, rank, worldSize, spots, spotsSize);
-
+        if (rank < worldSize - 1) MPI_Wait(&reqRecvLower, NULL);
+        if (rank != 0) MPI_Wait(&reqRecvUpper, NULL);
+        endOfConvolution |= filterOnReceived(block, newBlock, bw, bh + 2, rank, worldSize);
         int globalEnd = 0;
         MPI_Allreduce(&endOfConvolution, &globalEnd, 1, MPI_INT, MPI_LOR, MPI_COMM_WORLD);
-        //printf("Sent %d to allreduce, returned %d\n",endOfConvolution,globalEnd);
-        if (globalEnd == 0) {//if there is no difference, we are done for
-            break;
-        }
+        if (globalEnd == 0) break;
         if (rank < worldSize - 1) MPI_Wait(&reqSendLower, NULL);
         if (rank != 0) MPI_Wait(&reqSendUpper, NULL);
         float *switcher = newBlock;
         newBlock = block;
         block = switcher;
-        //if (rank==0){
-        // printf("%d iteration done and still going on \n",numIter);
-        numIter++;
-        //if(numIter > 150000) break;
-        //}
-        //break;
     }
     free(newBlock);//if done, free the new block which is now same as previous
     return block;
@@ -262,7 +207,6 @@ MPI_Datatype createSpotType() {
     MPI_Type_commit(&mpi_spot);
     return mpi_spot;
 }
-
 
 /// main - Main method
 int main(int argc, char **argv) {
@@ -284,7 +228,6 @@ int main(int argc, char **argv) {
         if (myRank == 0) {
             tie(width, height, spots) = readInstance(argv[1]);
             spotsSize = static_cast<unsigned int>(spots.size());
-
             // round the spacesize of the image to be multiple of the number of used processes
             if (height % worldSize != 0) height = ((height / worldSize) + 1) * worldSize;
             if (width % worldSize != 0) width = ((width / worldSize) + 1) * worldSize;
@@ -299,39 +242,32 @@ int main(int argc, char **argv) {
         //        |  |  |        \\
         //        V  V  V        \\
 
-
+        float *blockBuff;
+        unsigned int *tmpWH = new unsigned int[3];
         if (myRank == 0) {
             for (Spot &s : spots) image[s.y * width + s.x] = s.temperature;
-            unsigned int *tmpWH = new unsigned int[3];
             tmpWH[0] = blockWidth;
             tmpWH[1] = blockHeight;
             tmpWH[2] = spotsSize;
             int size = (blockHeight + 2) * blockWidth;
-            float *blockBuff = (float *) malloc(size * sizeof(float));
+            blockBuff = (float *) malloc(size * sizeof(float));
             memset(blockBuff, '\0', size * 4);
             MPI_Bcast(tmpWH, 3, MPI_INT, 0, MPI_COMM_WORLD);
             spotData = spots.data();
-            MPI_Bcast(spotData, spotsSize, mpi_spot, 0, MPI_COMM_WORLD);
-            burstSpotsIntoBlock(myRank, blockBuff, spotData, spotsSize, blockWidth, blockHeight);
-            blockBuff = convoluteImage(myRank, worldSize, blockBuff, blockWidth, blockHeight, spotData, spotsSize);
-            MPI_Gather(blockBuff + blockWidth, blockWidth * blockHeight, MPI_FLOAT, image, blockWidth * blockHeight, MPI_FLOAT, 0, MPI_COMM_WORLD);
-            free(blockBuff);
-            delete (tmpWH);
         } else {
-            int *tmpWH = new int[3];;
             MPI_Bcast(tmpWH, 3, MPI_INT, 0, MPI_COMM_WORLD);
-            int bw = tmpWH[0], bh = tmpWH[1];
+            blockWidth = tmpWH[0];
+            blockHeight = tmpWH[1];
             spotsSize = tmpWH[2];
-            int size = bw * (bh + 2);
-            float *blockBuff = (float *) malloc(size * sizeof(float));
+            blockBuff = (float *) malloc((blockWidth * (blockHeight + 2)) * sizeof(float));
             spotData = (Spot *) malloc(spotsSize * sizeof(Spot));
-            MPI_Bcast(spotData, spotsSize, mpi_spot, 0, MPI_COMM_WORLD);
-            burstSpotsIntoBlock(myRank, blockBuff, spotData, spotsSize, bw, bh);
-            blockBuff = convoluteImage(myRank, worldSize, blockBuff, bw, bh, spotData, spotsSize);
-            MPI_Gather(blockBuff + bw, bw * bh, MPI_FLOAT, image, bw * bh, MPI_FLOAT, 0, MPI_COMM_WORLD);
-            free(blockBuff);
-            delete (tmpWH);
         }
+        MPI_Bcast(spotData, spotsSize, mpi_spot, 0, MPI_COMM_WORLD);
+        burstSpotsIntoBlock(myRank, blockBuff, spotData, spotsSize, blockWidth, blockHeight);
+        blockBuff = convoluteImage(myRank, worldSize, blockBuff, blockWidth, blockHeight, spotData, spotsSize);
+        MPI_Gather(blockBuff + blockWidth, blockWidth * blockHeight, MPI_FLOAT, image, blockWidth * blockHeight, MPI_FLOAT, 0, MPI_COMM_WORLD);
+        free(blockBuff);
+        delete (tmpWH);
         //-----------------------\\
 
         if (myRank == 0) {

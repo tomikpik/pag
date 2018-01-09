@@ -86,11 +86,18 @@ int differsLocal(double *oldBlock, double *newBlock, int blockWidth, int blockHe
     for (int y = 2; y < blockHeight - 2; ++y)
         for (int x = 0; x < blockWidth; ++x) {
             if (newBlock[y * blockWidth + x] >= 0) continue;
+            double divide = 9.0f;
             double sum = oldBlock[y * blockWidth + x] + oldBlock[(y - 1) * blockWidth + x] + oldBlock[(y + 1) * blockWidth + x];
-            if (x == 0) sum /= 6.0f;
-            else sum = (sum + oldBlock[y * blockWidth + x - 1] + oldBlock[(y - 1) * blockWidth + x - 1] + oldBlock[(y + 1) * blockWidth + x - 1]) / 9.0f;
-            if (x == blockWidth - 1) sum /= 6.0f;
-            else sum = (sum + oldBlock[y * blockWidth + x + 1] + oldBlock[(y - 1) * blockWidth + x + 1] + oldBlock[(y + 1) * blockWidth + x + 1]) / 9.0f;
+            if (x == 0)
+                divide = 6.0f;
+            else
+                sum += oldBlock[y * blockWidth + x - 1] + oldBlock[(y - 1) * blockWidth + x - 1] + oldBlock[(y + 1) * blockWidth + x - 1];
+
+            if (x == blockWidth - 1)
+                divide = 6.0f;
+            else
+                sum += oldBlock[y * blockWidth + x + 1] + oldBlock[(y - 1) * blockWidth + x + 1] + oldBlock[(y + 1) * blockWidth + x + 1];
+            sum /= (float) divide;
             newBlock[y * blockWidth + x] = ceilDouble(sum);
             if (fabs(newBlock[y * blockWidth + x] - oldBlock[y * blockWidth + x]) >= EPSILON) differs = true;
         }
@@ -112,10 +119,8 @@ int differsRemote(double *block, double *newBlock, int bw, int bh, int rank, int
                 sum += block[(y + y1) * bw + x + x1];
             }
         }
-        sum /= (float) num;
-        if (sum > 255) sum = 255;
-        newBlock[y * bw + x] = sum;
-        if (fabs(sum - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
+        newBlock[y * bw + x] = ceilDouble(sum /(float) num);
+        if (fabs(newBlock[y * bw + x] - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
     }
 
     y = bh - 2;
@@ -131,53 +136,11 @@ int differsRemote(double *block, double *newBlock, int bw, int bh, int rank, int
                 sum += block[(y + y1) * bw + x + x1];
             }
         }
-        sum /= (float) num;
-        if (sum > 255) sum = 255;
-        newBlock[y * bw + x] = sum;
-        if (fabs(sum - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
+        newBlock[y * bw + x] = ceilDouble(sum /(float) num);
+        if (fabs(newBlock[y * bw + x] - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
     }
     return different;
 }
-
-//int differsRemote(double *block, double *newBlock, int blockWidth, int blockHeight, int rank, int worldsize) {
-//    bool differs = false;
-//    int count = 0, x1, y1 = 1;
-//    for (x1 = 0; x1 < blockWidth; ++x1) {
-//        if (newBlock[y1 * blockWidth + x1] >= 0) continue;
-//        sum = 0.0f;
-//        count = 0;
-//        for (int y2 = -1; y2 < 2; ++y2) {
-//            if (rank == 0 && (y2 == -1)) continue;
-//            for (int x2 = -1; x2 < 2; ++x2) {
-//                if ((x1 == 0 && x2 == -1) || (x1 == blockWidth - 1 && x2 == 1)) continue;
-//                sum += block[(y1 + y2) * blockWidth + x1 + x2];
-//                count++;
-//            }
-//        }
-//        sum /= (double) count;
-//        newBlock[y1 * blockWidth + x1] = ceilDouble(sum);
-//        if (fabs(newBlock[y1 * blockWidth + x1] - block[y1 * blockWidth + x1]) >= EPSILON) differs = true;
-//    }
-//
-//    y1 = blockHeight - 2;
-//    for (x1 = 0; x1 < blockWidth; ++x1) {
-//        if (newBlock[y1 * blockWidth + x1] >= 0) continue;
-//        sum = 0.0f;
-//        count = 0;
-//        for (int y2 = -1; y2 < 2; ++y2) {
-//            if (rank == worldsize - 1 && (y2 == 1)) continue;
-//            for (int x2 = -1; x2 < 2; ++x2) {
-//                if ((x1 == 0 && x2 == -1) || (x1 == blockWidth - 1 && x2 == 1)) continue;
-//                sum += block[(y1 + y2) * blockWidth + x1 + x2];
-//                count++;
-//            }
-//        }
-//        sum /= (double) count;
-//        newBlock[y1 * blockWidth + x1] = ceilDouble(sum);
-//        if (fabs(newBlock[y1 * blockWidth + x1] - block[y1 * blockWidth + x1]) >= EPSILON) differs = true;
-//    }
-//    return differs;
-//}
 
 void splitSpots(int rank, Spot *spots, int spotsCount, double *block, int blockWidth, int blockHeight) {
     for (int i = 0; i < spotsCount; ++i)
@@ -187,7 +150,7 @@ void splitSpots(int rank, Spot *spots, int spotsCount, double *block, int blockW
 
 double *convolution(int rank, int worldSize, Spot *spots, int spotsCount, double *block, int blockWidth, int blockHeight) {
     MPI_Request sendRequestUpper, sendRequestLower, receiveRequestUpper, receiveRequestLower;
-    double *newBlock = (double *) malloc(blockWidth * (blockHeight + 2) * sizeof(double));
+    double *newBlock = (double *) calloc(blockWidth * (blockHeight + 2), sizeof(double));
     while (true) {
         for (int i = 0; i < blockWidth * (blockHeight + 2); ++i) newBlock[i] = -1;
         if (rank != 0) {
@@ -198,8 +161,10 @@ double *convolution(int rank, int worldSize, Spot *spots, int spotsCount, double
             MPI_Isend(block + blockWidth * blockHeight, blockWidth, MPI_DOUBLE, rank + 1, 1, MPI_COMM_WORLD, &sendRequestLower);
             MPI_Irecv(block + blockWidth * blockHeight + blockWidth, blockWidth, MPI_DOUBLE, rank + 1, 1, MPI_COMM_WORLD, &receiveRequestLower);
         }
+        int stopConvolution = 0;
         splitSpots(rank, spots, spotsCount, newBlock, blockWidth, blockHeight);
-        int stopConvolution = differsLocal(block, newBlock, blockWidth, blockHeight + 2);
+        stopConvolution |= differsLocal(block, newBlock, blockWidth, blockHeight + 2);
+        MPI_Status s;
         if (rank < worldSize - 1) MPI_Wait(&receiveRequestLower, NULL);
         if (rank != 0) MPI_Wait(&receiveRequestUpper, NULL);
         stopConvolution |= differsRemote(block, newBlock, blockWidth, blockHeight + 2, rank, worldSize);
@@ -265,30 +230,29 @@ int main(int argc, char **argv) {
 
         double *block;
         unsigned int *subproblemSize = new unsigned int[3];
-        if (myRank != 0) {
-            MPI_Bcast(subproblemSize, 3, MPI_INT, 0, MPI_COMM_WORLD);
-            blockWidth = subproblemSize[0];
-            blockHeight = subproblemSize[1];
-            spotsCount = subproblemSize[2];
-            block = (double *) malloc((blockWidth * (blockHeight + 2)) * sizeof(double));
-            spotData = (Spot *) malloc(spotsCount*sizeof(Spot));
-        } else {
+        if (myRank == 0) {
             for (Spot &s : spots) image[s.y * width + s.x] = s.temperature;
             subproblemSize[0] = blockWidth;
             subproblemSize[1] = blockHeight;
             subproblemSize[2] = spotsCount;
             int size = (blockHeight + 2) * blockWidth;
-            block = (double *) malloc(size * sizeof(double));
+            block = (double *) calloc(size, sizeof(double));
             MPI_Bcast(subproblemSize, 3, MPI_INT, 0, MPI_COMM_WORLD);
             spotData = spots.data();
+        } else {
+            MPI_Bcast(subproblemSize, 3, MPI_INT, 0, MPI_COMM_WORLD);
+            blockWidth = subproblemSize[0];
+            blockHeight = subproblemSize[1];
+            spotsCount = subproblemSize[2];
+            block = (double *) calloc((blockWidth * (blockHeight + 2)),sizeof(double));
+            spotData = (Spot *) calloc(spotsCount,sizeof(Spot));
         }
         MPI_Bcast(spotData, spotsCount, mpi_spot_t, 0, MPI_COMM_WORLD);
         splitSpots(myRank, spotData, spotsCount, block, blockWidth, blockHeight);
         block = convolution(myRank, worldSize, spotData, spotsCount, block, blockWidth, blockHeight);
         MPI_Gather(block + blockWidth, blockWidth * blockHeight, MPI_DOUBLE, image, blockWidth * blockHeight, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        delete (subproblemSize);
         free(block);
-
+        delete (subproblemSize);
         //-----------------------\\
 
         if (myRank == 0) {
