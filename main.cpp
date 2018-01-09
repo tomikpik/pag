@@ -97,8 +97,8 @@ int differsLocal(double *oldBlock, double *newBlock, int blockWidth, int blockHe
                 divide = 6.0f;
             else
                 sum += oldBlock[y * blockWidth + x + 1] + oldBlock[(y - 1) * blockWidth + x + 1] + oldBlock[(y + 1) * blockWidth + x + 1];
-            sum /= (float) divide;
-            newBlock[y * blockWidth + x] = ceilDouble(sum);
+
+            newBlock[y * blockWidth + x] = ceilDouble(sum/ divide);
             if (fabs(newBlock[y * blockWidth + x] - oldBlock[y * blockWidth + x]) >= EPSILON) differs = true;
         }
     return differs;
@@ -106,7 +106,7 @@ int differsLocal(double *oldBlock, double *newBlock, int blockWidth, int blockHe
 
 int differsRemote(double *block, double *newBlock, int bw, int bh, int rank, int worldsize) {
     int num = 0, y = 1, different = 0;
-    float sum = 0;
+    double sum = 0;
     for (int x = 0; x < bw; ++x) {
         if (newBlock[y * bw + x] >= 0) continue;
         num = 0;
@@ -119,7 +119,7 @@ int differsRemote(double *block, double *newBlock, int bw, int bh, int rank, int
                 sum += block[(y + y1) * bw + x + x1];
             }
         }
-        newBlock[y * bw + x] = ceilDouble(sum /(float) num);
+        newBlock[y * bw + x] = ceilDouble(sum /(double) num);
         if (fabs(newBlock[y * bw + x] - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
     }
 
@@ -136,7 +136,7 @@ int differsRemote(double *block, double *newBlock, int bw, int bh, int rank, int
                 sum += block[(y + y1) * bw + x + x1];
             }
         }
-        newBlock[y * bw + x] = ceilDouble(sum /(float) num);
+        newBlock[y * bw + x] = ceilDouble(sum /(double) num);
         if (fabs(newBlock[y * bw + x] - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
     }
     return different;
@@ -235,8 +235,6 @@ int main(int argc, char **argv) {
             subproblemSize[0] = blockWidth;
             subproblemSize[1] = blockHeight;
             subproblemSize[2] = spotsCount;
-            int size = (blockHeight + 2) * blockWidth;
-            block = (double *) calloc(size, sizeof(double));
             MPI_Bcast(subproblemSize, 3, MPI_INT, 0, MPI_COMM_WORLD);
             spotData = spots.data();
         } else {
@@ -244,9 +242,9 @@ int main(int argc, char **argv) {
             blockWidth = subproblemSize[0];
             blockHeight = subproblemSize[1];
             spotsCount = subproblemSize[2];
-            block = (double *) calloc((blockWidth * (blockHeight + 2)),sizeof(double));
             spotData = (Spot *) calloc(spotsCount,sizeof(Spot));
         }
+        block = (double *) calloc((blockWidth * (blockHeight + 2)),sizeof(double));
         MPI_Bcast(spotData, spotsCount, mpi_spot_t, 0, MPI_COMM_WORLD);
         splitSpots(myRank, spotData, spotsCount, block, blockWidth, blockHeight);
         block = convolution(myRank, worldSize, spotData, spotsCount, block, blockWidth, blockHeight);
