@@ -77,7 +77,7 @@ void writeOutput(const int myRank, const int width, const int height, const stri
 }
 
 double ceilDouble(double value) {
-    if(value>255) return 255;
+    if (value > 255) return 255;
     return value;
 }
 
@@ -86,61 +86,63 @@ int differsLocal(double *oldBlock, double *newBlock, int blockWidth, int blockHe
     for (int y = 2; y < blockHeight - 2; ++y)
         for (int x = 0; x < blockWidth; ++x) {
             if (newBlock[y * blockWidth + x] >= 0) continue;
-            double divide = 9.0f;
+            bool outOfBounds = false;
             double sum = oldBlock[y * blockWidth + x] + oldBlock[(y - 1) * blockWidth + x] + oldBlock[(y + 1) * blockWidth + x];
             if (x == 0)
-                divide = 6.0f;
+                outOfBounds = true;
             else
                 sum += oldBlock[y * blockWidth + x - 1] + oldBlock[(y - 1) * blockWidth + x - 1] + oldBlock[(y + 1) * blockWidth + x - 1];
 
             if (x == blockWidth - 1)
-                divide = 6.0f;
+                outOfBounds = true;
             else
                 sum += oldBlock[y * blockWidth + x + 1] + oldBlock[(y - 1) * blockWidth + x + 1] + oldBlock[(y + 1) * blockWidth + x + 1];
 
-            newBlock[y * blockWidth + x] = ceilDouble(sum/ divide);
+            newBlock[y * blockWidth + x] = ceilDouble(sum / (outOfBounds ? 6.0f : 9.0f));
             if (fabs(newBlock[y * blockWidth + x] - oldBlock[y * blockWidth + x]) >= EPSILON) differs = true;
         }
     return differs;
 }
 
-int differsRemote(double *block, double *newBlock, int bw, int bh, int rank, int worldsize) {
-    int num = 0, y = 1, different = 0;
-    double sum = 0;
-    for (int x = 0; x < bw; ++x) {
-        if (newBlock[y * bw + x] >= 0) continue;
-        num = 0;
-        sum = 0;
-        for (int y1 = -1; y1 < 2; ++y1) {
-            if (rank == 0 && (y1 == -1)) continue;
-            for (int x1 = -1; x1 < 2; ++x1) {
-                if ((x == 0 && x1 == -1) || (x == bw - 1 && x1 == 1)) continue;
-                num++;
-                sum += block[(y + y1) * bw + x + x1];
-            }
-        }
-        newBlock[y * bw + x] = ceilDouble(sum /(double) num);
-        if (fabs(newBlock[y * bw + x] - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
-    }
-
-    y = bh - 2;
-    for (int x = 0; x < bw; ++x) {
-        if (newBlock[y * bw + x] >= 0)continue;
-        num = 0;
-        sum = 0;
-        for (int y1 = -1; y1 < 2; ++y1) {
-            if (rank == worldsize - 1 && (y1 == 1)) continue;
-            for (int x1 = -1; x1 < 2; ++x1) {
-                if ((x == 0 && x1 == -1) || (x == bw - 1 && x1 == 1)) continue;
-                num++;
-                sum += block[(y + y1) * bw + x + x1];
-            }
-        }
-        newBlock[y * bw + x] = ceilDouble(sum /(double) num);
-        if (fabs(newBlock[y * bw + x] - block[y * bw + x]) >= EPSILON) different = 1;//there is still a point to convolute
-    }
-    return different;
-}
+//int differsRemote(double *block, double *newBlock, int bw, int bh, int rank, int worldsize) {
+//    int num = 0;
+//    int y = 1;
+//    int different = 0;
+//    double sum = 0;
+//    for (int x = 0; x < bw; ++x) {
+//        if (newBlock[y * bw + x] >= 0) continue;
+//        num = 0;
+//        sum = 0;
+//        for (int y1 = -1; y1 < 2; ++y1) {
+//            if (rank == 0 && (y1 == -1)) continue;
+//            for (int x1 = -1; x1 < 2; ++x1) {
+//                if ((x == 0 && x1 == -1) || (x == bw - 1 && x1 == 1)) continue;
+//                num++;
+//                sum += block[(y + y1) * bw + x + x1];
+//            }
+//        }
+//        newBlock[y * bw + x] = ceilDouble(sum / (double) num);
+//        if (fabs(newBlock[y * bw + x] - block[y * bw + x]) >= EPSILON) different = 1;
+//    }
+//
+//    y = bh - 2;
+//    for (int x = 0; x < bw; ++x) {
+//        if (newBlock[y * bw + x] >= 0)continue;
+//        num = 0;
+//        sum = 0;
+//        for (int y1 = -1; y1 < 2; ++y1) {
+//            if (rank == worldsize - 1 && (y1 == 1)) continue;
+//            for (int x1 = -1; x1 < 2; ++x1) {
+//                if ((x == 0 && x1 == -1) || (x == bw - 1 && x1 == 1)) continue;
+//                num++;
+//                sum += block[(y + y1) * bw + x + x1];
+//            }
+//        }
+//        newBlock[y * bw + x] = ceilDouble(sum / (double) num);
+//        if (fabs(newBlock[y * bw + x] - block[y * bw + x]) >= EPSILON) different = 1;
+//    }
+//    return different;
+//}
 
 void splitSpots(int rank, Spot *spots, int spotsCount, double *block, int blockWidth, int blockHeight) {
     for (int i = 0; i < spotsCount; ++i)
@@ -242,9 +244,9 @@ int main(int argc, char **argv) {
             blockWidth = subproblemSize[0];
             blockHeight = subproblemSize[1];
             spotsCount = subproblemSize[2];
-            spotData = (Spot *) calloc(spotsCount,sizeof(Spot));
+            spotData = (Spot *) calloc(spotsCount, sizeof(Spot));
         }
-        block = (double *) calloc((blockWidth * (blockHeight + 2)),sizeof(double));
+        block = (double *) calloc((blockWidth * (blockHeight + 2)), sizeof(double));
         MPI_Bcast(spotData, spotsCount, mpi_spot_t, 0, MPI_COMM_WORLD);
         splitSpots(myRank, spotData, spotsCount, block, blockWidth, blockHeight);
         block = convolution(myRank, worldSize, spotData, spotsCount, block, blockWidth, blockHeight);
