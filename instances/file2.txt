@@ -1,0 +1,16 @@
+y = bh - 2;
+for (int x = 0; x < bw; ++x) {
+    if (newBlock[y * bw + x] >= 0) continue;
+    iterations = 0;
+    sum = 0;
+    for (int y1 = -1; y1 < 2; ++y1) {
+        if (rank == worldsize - 1 && (y1 == 1)) continue;
+        for (int x1 = -1; x1 < 2; ++x1) {
+            if ((x == 0 && x1 == -1) || (x == bw - 1 && x1 == 1)) continue;
+            iterations++;
+            sum += block[(y + y1) * bw + x + x1];
+        }
+    }
+    newBlock[y * bw + x] = ceilDouble(sum / (double) iterations);
+    if (fabs(newBlock[y * bw + x] - block[y * bw + x]) >= EPSILON) different = 1;
+}
